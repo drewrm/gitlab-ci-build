@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 SOURCE_DIR="/home/vagrant/gitlab-ci"
+GIT_CMD="git --work-tree=$SOURCE_DIR --git-dir=$SOURCE_DIR/.git"
 RUBY_PATCH="p353"
 
 function build_ruby {
@@ -19,18 +20,32 @@ function build_ruby {
 }
 
 
-sudo yum install -y rpmbuild mock fedpkg git libyaml-devel readline-devel zlib-devel libffi-devel openssl-devel nginx mysql-server mysql-client redis
+sudo yum install -y rpmbuild mock fedpkg git libyaml-devel readline-devel zlib-devel libffi-devel openssl-devel nginx mysql-server mysql-client redis mysql-devel
 sudo usermod -a -G mock vagrant
 
-#build_ruby
+rpm -qa ruby | grep 2.0.0 > /dev/null
+if [ $? -ne 0 ]; then
+    build_ruby
+    sudo rpm -Uvh /home/vagrant/rpmbuild/RPMS/x86_64/ruby-2.0.0-${RUBY_PATCH}*.rpm
+fi
+
 
 if [ ! -d $SOURCE_DIR ]; then
     git clone https://gitlab.com/gitlab-org/gitlab-ci.git $SOURCE_DIR
 fi
 
-git --work-tree=$SOURCE_DIR --git-dir=$SOURCE_DIR/.git  archive master --format=tar --prefix=gitlab_ci-0.0.1/opt/gitlab_ci/ | gzip > ~/rpmbuild/SOURCES/gitlab_ci.tar.gz
-rpmbuild -bb /vagrant/build/rpm/gitlab-ci.spec
+latest_tag=$($GIT_CMD describe --abbrev=0 --tags)
+version=$(echo $latest_tag | cut -c 2-)
 
+$GIT_CMD checkout "tags/${latest_tag}"
+$GIT_CMD archive ${latest_tag} --format=tar --prefix=gitlab_ci-${version}/opt/gitlab_ci/ | gzip > ~/rpmbuild/SOURCES/gitlab_ci.tar.gz
+
+
+cp /vagrant/build/rpm/gitlab-ci.spec ~/rpmbuild/SPECS/
+sed -i "s/Version:.*$/Version: ${version}/g" ~/rpmbuild/SPECS/gitlab-ci.spec
+
+rm ~/rpmbuild/RPMS/x86_64/gitlab_ci*.rpm
+rpmbuild -bb ~/rpmbuild/SPECS/gitlab-ci.spec
 
 sudo rpm -e gitlab_ci
-sudo rpm -Uvh /home/vagrant/rpmbuild/RPMS/noarch/gitlab_ci-0.0.1-1.el6.noarch.rpm
+sudo rpm -Uvh /home/vagrant/rpmbuild/RPMS/x86_64/gitlab_ci-*.rpm

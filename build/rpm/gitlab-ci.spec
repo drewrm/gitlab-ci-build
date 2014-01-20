@@ -1,5 +1,5 @@
 Name: gitlab_ci
-Version: 0.0.1
+Version:
 Release:	1%{?dist}
 Summary: Gitlab CI Controller
 Group: test
@@ -7,8 +7,8 @@ License: none
 URL: http://gitlab.org/gitlab-ci
 Source0: %{name}.tar.gz
 BuildRoot:	%{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-BuildArch: noarch
-Requires: nginx mysql-server redis
+BuildArch: x86_64
+Requires: nginx, mysql-server, redis, ruby > 2.0.0
 %define  debug_package %{nil}
 
 %description
@@ -43,6 +43,9 @@ sed -i  "s/username:.*root/username: gitlab_ci/g" %{buildroot}/opt/gitlab_ci/con
 sed -i  "s/password:.*$/password: gitlab_ci/g" %{buildroot}/opt/gitlab_ci/config/database.yml
 sed -i  "s/#.*host:.*localhost/host: localhost/g" %{buildroot}/opt/gitlab_ci/config/database.yml
 
+#vendor the gems
+cd  %{buildroot}/opt/gitlab_ci/ && (bundle check || bundle install --without postgres development test --deployment)
+
 %clean
 rm -rf %{buildroot}
 
@@ -63,15 +66,22 @@ fi
 
 %post
 sed -i "s/server_name ci.gitlab.org/server_name $(hostname)/g" /etc/nginx/conf.d/gitlab_ci.conf
-cd /opt/gitlab_ci && (sudo -u gitlab_ci -i bundle check || sudo -u gitlab_ci -i bundle install --without postgres development test --deployment)
 cd /opt/gitlab_ci && sudo -u gitlab_ci -i bundle exec rake assets:precompile RAILS_ENV=production
 cd /opt/gitlab_ci && sudo -u gitlab_ci -i bundle exec whenever -w RAILS_ENV=production
+
+
 %preun
 
-service gitlab_ci status
 
-if [ $? -eq 0 ]; then
-    service gitlab_ci stop
+service gitlab_ci status
+if [ $? -eq 0 ]
+then
+    if [ "$1" = 0 ]
+    then
+        service gitlab_ci stop
+    else
+        service gitlab_ci restart
+    fi
 fi
 
 %changelog
